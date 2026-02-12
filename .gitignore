@@ -10,3 +10,9 @@ working-buffer.md
 
 # WAL logs - local only
 memory/WAL-*.log
+
+# Planning and internal docs - keep local only
+PHASE1-UPDATE.md
+PHASE2-PLAN.md
+*-PLAN.md
+*-UPDATE.md
