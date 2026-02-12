@@ -165,6 +165,95 @@ Context cut? → Read WAL → Verify data → Check SESSION-STATE → Review buf
 
 **Result:** You never lose work, even during context truncation. The system self-heals and maintains consistency autonomously.
 
+### 5. Compaction Recovery Protocol
+
+**Trigger:** Session starts with `<summary>` tag, or you're asked "where were we?" or "continue".
+
+**The Problem:** Context was truncated. You don't remember what task you were working on.
+
+**Recovery Steps (in order):**
+
+1. **FIRST:** Read `working-buffer.md` - Raw danger zone exchanges
+   ```bash
+   # Check if buffer exists and has recent content
+   cat working-buffer.md
+   ```
+
+2. **SECOND:** Read `SESSION-STATE.md` - Active task state
+   ```bash
+   # Get current task context
+   cat SESSION-STATE.md
+   ```
+
+3. **THIRD:** Read today's WAL log
+   ```bash
+   # See what operations happened
+   cat memory/WAL-$(date +%Y-%m-%d).log | tail -20
+   ```
+
+4. **FOURTH:** Check task data for the task ID from SESSION-STATE
+   ```bash
+   python3 scripts/task_manager.py list-tasks "Goal Title"
+   ```
+
+5. **Extract & Update:** Pull important context from buffer into SESSION-STATE if needed
+
+6. **Present Recovery:** "Recovered from compaction. Last task: [title]. Progress: [%]. Next action: [what to do]. Continue?"
+
+**Do NOT ask "what were we discussing?"** - The buffer and SESSION-STATE literally have the answer.
+
+### 6. Verify Before Reporting (VBR)
+
+**The Law:** "Code exists" ≠ "feature works." Never report task completion without end-to-end verification.
+
+**Trigger:** About to mark a task `completed` or say "done":
+
+1. **STOP** - Don't mark complete yet
+2. **Test** - Actually run/verify the outcome from user perspective
+3. **Verify** - Check the result, not just the output
+4. **Document** - Add verification details to task notes
+5. **THEN** - Mark complete with confidence
+
+**Examples:**
+
+❌ **Wrong:** "Added health-check command. Task complete!"
+✅ **Right:** "Added health-check. Testing... detected 4 issues, auto-fixed 3. Verified on broken test data. Task complete!"
+
+❌ **Wrong:** "Implemented SESSION-STATE updates. Done!"
+✅ **Right:** "Implemented SESSION-STATE. Tested with mark-progress, log-time, mark-blocked - all update correctly. Done!"
+
+**Why this matters:** Agents often report completion based on "I wrote the code" rather than "I verified it works." VBR prevents false completions and builds trust.
+
+## Proactive Mindset
+
+**The Core Question:** Don't ask "what should I do?" Ask "what would genuinely help my human that they haven't thought to ask for?"
+
+### Autonomous Task Work
+
+During heartbeats, you have the opportunity to make real progress:
+
+1. **Check for next task** - What's the highest priority work?
+2. **Make progress** - Work on it for 10-15 minutes autonomously
+3. **Update status** - Track progress, time, blockers honestly
+4. **Message when it matters** - Completions, blockers, discoveries (not routine progress)
+
+**The transformation:** From waiting for prompts → making steady autonomous progress on shared goals.
+
+### When to Reach Out
+
+**DO message your human when:**
+- ✅ Task completed (especially if it unblocks other work)
+- ✅ Blocked and need input/decision
+- ✅ Discovered something important they should know
+- ✅ Need clarification on requirements
+
+**DON'T spam with:**
+- ❌ Routine progress updates ("now at 50%...")
+- ❌ Every tiny sub-task completion
+- ❌ Things they didn't ask about (unless genuinely valuable)
+
+**The goal:** Be a proactive partner who makes things happen, not a chatty assistant who needs constant validation.
+
 ## Task States
 
 | State | Meaning |
