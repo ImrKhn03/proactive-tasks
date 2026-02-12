@@ -1,0 +1,12 @@
+# Task data - keep local only
+data/tasks.json
+data/tasks.json.bak
+
+# Session state - local only
+SESSION-STATE.md
+
+# Working buffer - local only
+working-buffer.md
+
+# WAL logs - local only
+memory/WAL-*.log
