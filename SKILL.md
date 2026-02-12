@@ -67,6 +67,104 @@ python3 scripts/task_manager.py mark-needs-input <task-id> \
 
 Then message your human with the update/question.
 
+## Phase 2: Production-Ready Architecture
+
+Proactive Tasks v1.2.0 includes battle-tested patterns from real agent usage to prevent data loss, survive context truncation, and maintain reliability under autonomous operation.
+
+### 1. WAL Protocol (Write-Ahead Logging)
+
+**The Problem:** Agents write to memory files, then context gets truncated. Changes vanish.
+
+**The Solution:** Log critical changes to `memory/WAL-YYYY-MM-DD.log` BEFORE modifying task data.
+
+**How it works:**
+- Every `mark-progress`, `log-time`, or status change creates a WAL entry first
+- If context gets cut mid-operation, the WAL has the details
+- After compaction, read the WAL to recover what was happening
+
+**Events logged:**
+- `PROGRESS_CHANGE`: Task progress updates (0-100%)
+- `TIME_LOG`: Actual time spent on tasks
+- `STATUS_CHANGE`: Task state transitions (blocked, completed, etc.)
+- `HEALTH_CHECK`: Self-healing operations
+
+**Automatically enabled** - no configuration needed. WAL files are created in `memory/` directory.
+
+### 2. SESSION-STATE.md (Active Working Memory)
+
+**The Concept:** Chat history is a BUFFER, not storage. SESSION-STATE.md is your "RAM" - the ONLY place task details are reliably preserved.
+
+**Auto-updated on every task operation:**
+```markdown
+## Current Task
+- **ID:** task_abc123
+- **Title:** Research voice models
+- **Status:** in_progress
+- **Progress:** 75%
+- **Time:** 45 min actual / 60 min estimate (25% faster)
+
+## Next Action
+Complete research, document findings in notes, mark complete.
+```
+
+**Why this matters:** After context compaction, you can read SESSION-STATE.md and immediately know:
+- What you were working on
+- How far you got
+- What to do next
+
+### 3. Working Buffer (Danger Zone Safety)
+
+**The Problem:** Between 60% and 100% context usage, you're in the "danger zone" - compaction could happen any time.
+
+**The Solution:** Automatically append all task updates to `working-buffer.md`.
+
+**How it works:**
+```bash
+# Every progress update, time log, or status change appends:
+- PROGRESS_CHANGE (2026-02-12T10:30:00Z): task_abc123 → 75%
+- TIME_LOG (2026-02-12T10:35:00Z): task_abc123 → +15 min
+- STATUS_CHANGE (2026-02-12T10:40:00Z): task_abc123 → completed
+```
+
+**After compaction:** Read `working-buffer.md` to see exactly what happened during the danger zone.
+
+**Manual flush:** `python3 scripts/task_manager.py flush-buffer` to copy buffer contents to daily memory file.
+
+### 4. Self-Healing Health Check
+
+**Agents make mistakes.** Task data can get corrupted over time. The health-check command detects and auto-fixes common issues:
+
+```bash
+python3 scripts/task_manager.py health-check
+```
+
+**Detects 5 categories of issues:**
+
+1. **Orphaned recurring tasks** - No parent goal
+2. **Impossible states** - Status=completed but progress < 100%
+3. **Missing timestamps** - Completed tasks without `completed_at`
+4. **Time anomalies** - Actual time >> estimate (flags for review, doesn't auto-fix)
+5. **Future-dated completions** - Completed tasks with future timestamps
+
+**Auto-fixes 4 safe categories** (time anomalies just flagged for human review).
+
+**When to run:**
+- During heartbeats (every few days)
+- After recovering from context truncation
+- When task data seems inconsistent
+
+### Production Reliability
+
+These four patterns work together to create a robust system:
+
+```
+User request → WAL log → Update data → Update SESSION-STATE → Append to buffer
+     ↓              ↓            ↓                ↓                    ↓
+Context cut? → Read WAL → Verify data → Check SESSION-STATE → Review buffer
+```
+
+**Result:** You never lose work, even during context truncation. The system self-heals and maintains consistency autonomously.
+
 ## Task States
 
 | State | Meaning |
@@ -228,10 +326,24 @@ See [CLI_REFERENCE.md](references/CLI_REFERENCE.md) for complete command documen
 
 Before proposing new features, evaluate them using our **VFM/ADL scoring frameworks** to ensure stability and value:
 
-- **VFM Protocol:** Value Frequency Multiplier scoring (High Frequency 3x, Failure Reduction 3x, User Burden 2x, Self Cost 2x)
-- **ADL Protocol:** Architecture Design Ladder (Stability > Explainability > Reusability > Scalability > Novelty)
+### VFM Protocol (Value Frequency Multiplier)
+Score across four dimensions:
+- **High Frequency** (3x): Will this be used daily/weekly?
+- **Failure Reduction** (3x): Does this prevent errors or data loss?
+- **User Burden** (2x): Does this reduce manual work significantly?
+- **Self Cost** (2x): How much maintenance/complexity does this add?
 
-See [EVOLUTION.md](EVOLUTION.md) for complete evaluation framework with real examples and decision rules.
+**Threshold:** Must score ≥60 points to proceed.
+
+### ADL Protocol (Architecture Design Ladder)
+**Priority ordering:** Stability > Explainability > Reusability > Scalability > Novelty
+
+**Forbidden Evolution:**
+- ❌ Adding complexity to "look smart"
+- ❌ Unverifiable changes (can't test if it worked)
+- ❌ Sacrificing stability for novelty
+
+**The Golden Rule:** "Does this let future-me solve more problems with less cost?" If no, skip it.
 
 ## Example Workflow
 
